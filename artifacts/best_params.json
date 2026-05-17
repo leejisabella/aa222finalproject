@@ -1,0 +1,10 @@
+{
+  "model": "hist_gb",
+  "params": {
+    "max_iter": 1000,
+    "learning_rate": 0.05,
+    "max_leaf_nodes": 15,
+    "min_samples_leaf": 40,
+    "l2_regularization": 1.0
+  }
+}
