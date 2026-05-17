@@ -1,0 +1,7 @@
+cell,cv_rmse,cv_std,test_rmse,test_r2,test_mape,r2_Cucumber,r2_Lettuce,r2_Pepper,r2_Tomato
+A. HGB raw (baseline),2.1397,0.0348,2.0444,0.8315,0.173,0.501,0.231,0.405,0.73
+B. HGB + engineered features,2.1448,0.0435,2.0648,0.8282,0.1749,0.49,0.209,0.397,0.725
+C. CatBoost + engineered features,2.1193,0.0464,2.0487,0.8308,0.1715,0.491,0.236,0.396,0.731
+D. Per-crop HGB + engineered features,2.1946,0.0305,2.0895,0.824,0.177,0.493,0.184,0.347,0.718
+E. Per-crop CatBoost + engineered features,2.1646,0.0288,2.0723,0.8269,0.1738,0.488,0.179,0.356,0.731
+F. XGBoost + engineered features (sanity),2.1656,0.0356,2.0783,0.8259,0.1737,0.486,0.201,0.393,0.72

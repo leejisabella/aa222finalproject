@@ -137,7 +137,7 @@ def test_split_validates_sizes(df: pd.DataFrame) -> None:
 
 
 def test_preprocessor_handles_missing(df: pd.DataFrame) -> None:
-    pp = make_preprocessor(handle_missing=True, scale_numeric=True)
+    pp = make_preprocessor(handle_missing=True, scale_numeric=True, include_engineered=False)
     # Inject a NaN to exercise the imputer path
     sample = df.head(50).copy()
     sample.loc[0, "avg_temperature_C"] = np.nan
@@ -146,7 +146,7 @@ def test_preprocessor_handles_missing(df: pd.DataFrame) -> None:
 
 
 def test_preprocessor_passthrough_keeps_nan(df: pd.DataFrame) -> None:
-    pp = make_preprocessor(handle_missing=False, scale_numeric=False)
+    pp = make_preprocessor(handle_missing=False, scale_numeric=False, include_engineered=False)
     sample = df.head(50).copy()
     sample.loc[0, "avg_temperature_C"] = np.nan
     Xt = pp.fit_transform(sample[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES])
@@ -155,7 +155,7 @@ def test_preprocessor_passthrough_keeps_nan(df: pd.DataFrame) -> None:
 
 
 def test_preprocessor_unknown_category_ignored(df: pd.DataFrame) -> None:
-    pp = make_preprocessor(handle_missing=False, scale_numeric=False)
+    pp = make_preprocessor(handle_missing=False, scale_numeric=False, include_engineered=False)
     train = df.head(200)[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES]
     pp.fit(train)
     novel = train.head(1).copy()

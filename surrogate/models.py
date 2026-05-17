@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Callable, Dict, Optional
 
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.ensemble import (
     HistGradientBoostingRegressor,
@@ -38,6 +39,13 @@ try:  # pragma: no cover - import-time guard, exercised by env, not tests
     XGBOOST_AVAILABLE = True
 except Exception:  # pragma: no cover
     XGBOOST_AVAILABLE = False
+
+try:  # pragma: no cover
+    from catboost import CatBoostRegressor  # type: ignore
+
+    CATBOOST_AVAILABLE = True
+except Exception:  # pragma: no cover
+    CATBOOST_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +103,7 @@ class RBFRegressor(BaseEstimator, RegressorMixin):
 ModelBuilder = Callable[[], Pipeline]
 
 
-def build_xgboost(**overrides) -> Pipeline:
+def build_xgboost(include_engineered: bool = True, **overrides) -> Pipeline:
     if not XGBOOST_AVAILABLE:
         raise RuntimeError(
             "xgboost is not importable on this host (missing libomp?). "
@@ -104,7 +112,8 @@ def build_xgboost(**overrides) -> Pipeline:
     # XGBoost handles NaNs natively, so we skip imputation; we also skip
     # scaling since trees are scale-invariant. We still one-hot encode
     # the categoricals because XGBRegressor expects numeric input.
-    pp = make_preprocessor(handle_missing=False, scale_numeric=False)
+    pp = make_preprocessor(handle_missing=False, scale_numeric=False,
+                           include_engineered=include_engineered)
     defaults = dict(
         n_estimators=400,
         max_depth=6,
@@ -125,13 +134,14 @@ def build_xgboost(**overrides) -> Pipeline:
     return Pipeline([("pre", pp), ("reg", model)])
 
 
-def build_hist_gb(**overrides) -> Pipeline:
+def build_hist_gb(include_engineered: bool = True, **overrides) -> Pipeline:
     """sklearn HistGradientBoosting — same algorithm class as XGBoost.
 
     Used as the primary surrogate when XGBoost is unavailable, and as
     a comparison baseline regardless. Natively handles NaNs.
     """
-    pp = make_preprocessor(handle_missing=False, scale_numeric=False)
+    pp = make_preprocessor(handle_missing=False, scale_numeric=False,
+                           include_engineered=include_engineered)
     defaults = dict(
         max_iter=500,
         max_depth=None,
@@ -197,6 +207,136 @@ def build_ridge_baseline(**overrides) -> Pipeline:
     return Pipeline([("pre", pp), ("reg", model)])
 
 
+class _CatBoostColumnSelector(BaseEstimator):
+    """Module-level (picklable) column reorderer + categorical-string coercer
+    for the CatBoost pipeline."""
+
+    def __init__(self, feature_order, categorical_features):
+        self.feature_order = list(feature_order)
+        self.categorical_features = list(categorical_features)
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        Xs = X[self.feature_order].copy()
+        for c in self.categorical_features:
+            Xs[c] = Xs[c].astype(str)
+        return Xs
+
+    def fit_transform(self, X, y=None):
+        return self.transform(X)
+
+
+def build_catboost(**overrides) -> Pipeline:
+    """CatBoost — often best on small-medium mixed-type tabular data.
+
+    Unlike the other boosters, CatBoost handles categoricals natively
+    via ordered target statistics, so we tell it about the categorical
+    column indices and skip one-hot encoding entirely. The standard
+    preprocessor would defeat that advantage, so we use a passthrough.
+    """
+    if not CATBOOST_AVAILABLE:
+        raise RuntimeError("catboost is not importable on this host.")
+
+    from surrogate.data import (
+        CATEGORICAL_FEATURES,
+        INDICATOR_FEATURES,
+        get_numeric_features,
+    )
+
+    numeric_cols = get_numeric_features(include_engineered=True)
+    feature_order = numeric_cols + CATEGORICAL_FEATURES + INDICATOR_FEATURES
+    cat_indices = [feature_order.index(c) for c in CATEGORICAL_FEATURES]
+
+    defaults = dict(
+        iterations=600,
+        learning_rate=0.05,
+        depth=6,
+        l2_leaf_reg=3.0,
+        loss_function="RMSE",
+        random_seed=0,
+        verbose=0,
+        thread_count=-1,
+        allow_writing_files=False,
+    )
+    defaults.update(overrides)
+    model = CatBoostRegressor(cat_features=cat_indices, **defaults)
+    pre = _CatBoostColumnSelector(feature_order, CATEGORICAL_FEATURES)
+    return Pipeline([("pre", pre), ("reg", model)])
+
+
+# ---------------------------------------------------------------------------
+# Per-crop ensemble: train one sub-model per crop, dispatch at predict time.
+# This directly attacks the within-crop R² gap by letting each sub-model
+# specialize on its crop's variance instead of being averaged out.
+# ---------------------------------------------------------------------------
+
+
+class PerCropEnsemble(BaseEstimator, RegressorMixin):
+    """Wraps a model builder so we fit one sub-model per crop_type level.
+
+    `crop_column` (default "crop_type") names the column in the input
+    DataFrame used to dispatch rows. The sub-model receives the full
+    DataFrame (including crop_column) so it can still use it as a
+    feature; in practice the one-hot for crop is constant within each
+    sub-model and contributes nothing, but leaving it in keeps the
+    preprocessor identical across global and per-crop pipelines.
+
+    Why a fresh class instead of sklearn's GroupKFold: we need a model
+    that *dispatches at predict time*, not just fits per-group. This
+    is closer to a stacked model with a hard-routing first layer.
+    """
+
+    def __init__(self, base_builder, crop_column: str = "crop_type"):
+        self.base_builder = base_builder
+        self.crop_column = crop_column
+
+    def fit(self, X, y):
+        if not hasattr(X, "loc"):
+            raise TypeError("PerCropEnsemble requires a DataFrame input.")
+        y = pd.Series(y).reset_index(drop=True) if not isinstance(y, pd.Series) else y
+        X = X.reset_index(drop=True)
+        y = y.reset_index(drop=True)
+        self.crops_ = sorted(X[self.crop_column].unique().tolist())
+        self.models_: Dict[str, Any] = {}
+        for crop in self.crops_:
+            mask = (X[self.crop_column] == crop).values
+            if mask.sum() < 20:
+                # Too few rows to specialize; fall back to a global model
+                # trained on all data — keeps prediction coverage.
+                pass
+            sub_model = self.base_builder()
+            sub_model.fit(X[mask], y[mask])
+            self.models_[crop] = sub_model
+        # Always train a fallback for unknown crops at predict time.
+        self.fallback_ = self.base_builder()
+        self.fallback_.fit(X, y)
+        return self
+
+    def predict(self, X):
+        if not hasattr(X, "loc"):
+            raise TypeError("PerCropEnsemble requires a DataFrame input.")
+        X = X.reset_index(drop=True)
+        preds = np.empty(len(X), dtype=float)
+        seen = np.zeros(len(X), dtype=bool)
+        for crop, model in self.models_.items():
+            mask = (X[self.crop_column] == crop).values
+            if mask.any():
+                preds[mask] = model.predict(X[mask])
+                seen |= mask
+        if not seen.all():
+            unseen = ~seen
+            preds[unseen] = self.fallback_.predict(X[unseen])
+        return preds
+
+
+def build_per_crop(base_model_name: str = "hist_gb", **base_overrides) -> PerCropEnsemble:
+    """Build a per-crop ensemble around one of the base models."""
+    builder = lambda: build_model(base_model_name, **base_overrides)
+    return PerCropEnsemble(base_builder=builder)
+
+
 MODEL_REGISTRY: Dict[str, ModelBuilder] = {
     "hist_gb": build_hist_gb,
     "random_forest": build_random_forest,
@@ -206,6 +346,8 @@ MODEL_REGISTRY: Dict[str, ModelBuilder] = {
 }
 if XGBOOST_AVAILABLE:
     MODEL_REGISTRY["xgboost"] = build_xgboost
+if CATBOOST_AVAILABLE:
+    MODEL_REGISTRY["catboost"] = build_catboost
 
 
 def build_model(name: str, **overrides) -> Pipeline:

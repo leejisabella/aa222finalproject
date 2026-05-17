@@ -29,7 +29,12 @@ from surrogate.data import (
     NUMERIC_FEATURES,
     FeatureSpec,
     build_feature_spec,
+    get_numeric_features,
     load_dataset,
+)
+from surrogate.features import (
+    ENGINEERED_NUMERIC_FEATURES,
+    add_engineered_features,
 )
 
 ARTIFACT_DIR = Path(__file__).resolve().parent.parent / "artifacts"
@@ -46,6 +51,7 @@ class SurrogatePredictor:
     feature_spec: FeatureSpec
     model_name: str = "unknown"
     metadata: Dict[str, Any] = None  # type: ignore[assignment]
+    uses_engineered_features: bool = True
 
     # ----------------------- validation helpers -----------------------
 
@@ -72,6 +78,11 @@ class SurrogatePredictor:
         missing = [c for c in (NUMERIC_FEATURES + CATEGORICAL_FEATURES) if c not in df.columns]
         if missing:
             raise ValueError(f"Missing required feature columns: {missing}")
+        # Auto-fill engineered features (caller supplies raw inputs only).
+        # Skip any that the caller already provided so test fixtures can override.
+        already_engineered = all(c in df.columns for c in ENGINEERED_NUMERIC_FEATURES)
+        if self.uses_engineered_features and not already_engineered:
+            df = add_engineered_features(df)
         # Auto-fill missingness indicators from the actual NaN pattern in
         # the supplied numeric columns. Optimizers supply fully-specified
         # configs (no NaNs), so these indicators end up as 0 — which
@@ -80,7 +91,8 @@ class SurrogatePredictor:
             if indicator not in df.columns:
                 df[indicator] = df[cols].isna().all(axis=1).astype(float)
         # Reorder + drop extras so the preprocessor sees its expected schema.
-        return df[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES]
+        numeric_cols = get_numeric_features(include_engineered=self.uses_engineered_features)
+        return df[numeric_cols + CATEGORICAL_FEATURES + INDICATOR_FEATURES]
 
     def _validate(self, df: pd.DataFrame, strict: bool) -> List[str]:
         """Return list of human-readable warnings/errors. Raise if strict."""
@@ -165,11 +177,13 @@ def build_predictor_from_pipeline(
     pipeline: Any,
     model_name: str = "unknown",
     metadata: Optional[Dict[str, Any]] = None,
+    uses_engineered_features: bool = True,
 ) -> SurrogatePredictor:
-    spec = build_feature_spec(load_dataset())
+    spec = build_feature_spec(load_dataset(engineer=False))
     return SurrogatePredictor(
         pipeline=pipeline,
         feature_spec=spec,
         model_name=model_name,
         metadata=dict(metadata or {}),
+        uses_engineered_features=uses_engineered_features,
     )

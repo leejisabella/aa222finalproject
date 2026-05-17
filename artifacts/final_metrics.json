@@ -1,0 +1,67 @@
+{
+  "model": "catboost",
+  "best_params": {
+    "iterations": 1000,
+    "depth": 6,
+    "learning_rate": 0.02,
+    "l2_leaf_reg": 10.0,
+    "bagging_temperature": 1.0
+  },
+  "test_metrics": {
+    "rmse": 2.030059480316616,
+    "mae": 1.6207204778426756,
+    "r2": 0.8339099190083223,
+    "mape": 0.1702144842930352,
+    "bias_mean_residual": 0.0575185411781666,
+    "abs_err_p50": 1.3668715238440972,
+    "abs_err_p95": 3.995874657371995,
+    "abs_err_p99": 5.140917117325606,
+    "abs_err_max": 6.756301195830485,
+    "spearman_rho": 0.9073257701077128,
+    "kendall_tau": 0.7318780040827264,
+    "top10_precision": 0.7,
+    "top50_precision": 0.52,
+    "top100_precision": 0.66
+  },
+  "per_crop_metrics": [
+    {
+      "crop_type": "Cucumber",
+      "n": 621,
+      "rmse": 2.0524,
+      "mae": 1.6459,
+      "r2": 0.4988,
+      "mape": 0.1639
+    },
+    {
+      "crop_type": "Lettuce",
+      "n": 405,
+      "rmse": 1.9195,
+      "mae": 1.5279,
+      "r2": 0.2509,
+      "mape": 0.277
+    },
+    {
+      "crop_type": "Pepper",
+      "n": 205,
+      "rmse": 2.1485,
+      "mae": 1.7023,
+      "r2": 0.4161,
+      "mape": 0.2328
+    },
+    {
+      "crop_type": "Tomato",
+      "n": 809,
+      "rmse": 2.0358,
+      "mae": 1.6272,
+      "r2": 0.7355,
+      "mape": 0.1057
+    }
+  ],
+  "latency": {
+    "single_call_seconds": 0.0053486708353739235,
+    "batched_per_item_seconds": 1.3695168076083064e-05
+  },
+  "n_train": 6120,
+  "n_val": 2040,
+  "n_test": 2040
+}

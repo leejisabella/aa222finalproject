@@ -190,6 +190,14 @@ DEFAULT_XGB_GRID: Dict[str, List[Any]] = {
     "reg_lambda": [0.0, 1.0, 5.0],
 }
 
+DEFAULT_CATBOOST_GRID: Dict[str, List[Any]] = {
+    "iterations": [400, 600, 1000, 1500],
+    "depth": [4, 6, 8, 10],
+    "learning_rate": [0.02, 0.05, 0.08, 0.12],
+    "l2_leaf_reg": [1.0, 3.0, 5.0, 10.0],
+    "bagging_temperature": [0.0, 0.5, 1.0],
+}
+
 
 # ---------------------------------------------------------------------------
 # End-to-end driver used by the CLI / notebook.

@@ -133,16 +133,21 @@ def clean_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
     return df, audit
 
 
-def load_dataset(path: Optional[Path] = None, clean: bool = True) -> pd.DataFrame:
-    """Load the raw CSV, drop ID/date columns, optionally clean.
+def load_dataset(
+    path: Optional[Path] = None,
+    clean: bool = True,
+    engineer: bool = True,
+) -> pd.DataFrame:
+    """Load the raw CSV, drop ID/date columns, optionally clean + engineer.
 
     With `clean=True` (default): drops 200 duplicate rows, repairs the
     one temperature-ordering violation, and adds the missingness
-    indicator features. With `clean=False`: returns the raw frame
-    (useful for diagnostics or to compare cleaned vs raw).
+    indicator features.
+    With `engineer=True` (default): adds domain-derived features (VPD,
+    DLI, GDD, fertilizer ratios, season totals) from `features.py`.
 
-    Rows with NaN target are always dropped (none in this dataset, but
-    a defensive check).
+    `engineer=False` is used for the A/B benchmark that quantifies how
+    much the engineered features help.
     """
     src = Path(path) if path is not None else DEFAULT_DATA_PATH
     if not src.exists():
@@ -152,6 +157,10 @@ def load_dataset(path: Optional[Path] = None, clean: bool = True) -> pd.DataFram
     df = df.dropna(subset=[TARGET]).reset_index(drop=True)
     if clean:
         df, _ = clean_dataset(df)
+    if engineer:
+        # Imported here to avoid a circular import (features uses no data helpers).
+        from surrogate.features import add_engineered_features
+        df = add_engineered_features(df)
     return df
 
 
@@ -195,10 +204,25 @@ class _LazyFeatureSpec:
 FEATURE_SPEC = _LazyFeatureSpec()
 
 
+def get_numeric_features(include_engineered: bool = True) -> List[str]:
+    """Numeric feature list, optionally including engineered ones.
+
+    Held separate from the module-level NUMERIC_FEATURES so the A/B
+    benchmark can build a preprocessor that intentionally excludes the
+    engineered features.
+    """
+    cols = list(NUMERIC_FEATURES)
+    if include_engineered:
+        from surrogate.features import ENGINEERED_NUMERIC_FEATURES
+        cols += ENGINEERED_NUMERIC_FEATURES
+    return cols
+
+
 def make_preprocessor(
     handle_missing: bool = True,
     scale_numeric: bool = True,
     sparse: bool = False,
+    include_engineered: bool = True,
 ) -> ColumnTransformer:
     """Build a ColumnTransformer for models that need imputed/encoded inputs.
 
@@ -228,9 +252,10 @@ def make_preprocessor(
     )
     categorical_pipeline = Pipeline(cat_steps)
 
+    numeric_cols = get_numeric_features(include_engineered=include_engineered)
     # Indicators are 0/1 and never NaN — pass through unchanged.
     transformers = [
-        ("num", numeric_pipeline, NUMERIC_FEATURES),
+        ("num", numeric_pipeline, numeric_cols),
         ("cat", categorical_pipeline, CATEGORICAL_FEATURES),
     ]
     transformers.append(("ind", "passthrough", INDICATOR_FEATURES))
@@ -267,7 +292,9 @@ def split_data(
         train_val, test_size=rel_val, random_state=random_state, stratify=strat_tv
     )
 
-    feature_cols = NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES
+    feature_cols = get_numeric_features(include_engineered=True) + CATEGORICAL_FEATURES + INDICATOR_FEATURES
+    # Keep only columns that actually exist (handles engineer=False case).
+    feature_cols = [c for c in feature_cols if c in df.columns]
     return {
         "X_train": train[feature_cols].reset_index(drop=True),
         "y_train": train[TARGET].reset_index(drop=True),
