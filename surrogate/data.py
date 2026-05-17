@@ -49,6 +49,28 @@ NUMERIC_FEATURES: List[str] = [
 # train/test splits.
 DROP_COLUMNS: List[str] = ["greenhouse_id", "planting_date", "harvest_date"]
 
+# Columns whose values are missing in informative blocks (e.g. NPK is
+# always missing as a group → "no fertilizer recorded"; the 5 env
+# columns are always missing as a group → "site without env sensors").
+# We add a single 0/1 indicator per block so the non-tree baselines
+# (MLP, RBF, Ridge) can learn that NaN means something rather than
+# silently absorbing a median-imputed value.
+MISSINGNESS_INDICATOR_GROUPS: Dict[str, List[str]] = {
+    "fertilizer_was_missing": [
+        "fertilizer_N_kg_ha",
+        "fertilizer_P_kg_ha",
+        "fertilizer_K_kg_ha",
+    ],
+    "env_was_missing": [
+        "avg_temperature_C",
+        "min_temperature_C",
+        "max_temperature_C",
+        "humidity_percent",
+        "light_intensity_lux",
+    ],
+}
+INDICATOR_FEATURES: List[str] = list(MISSINGNESS_INDICATOR_GROUPS.keys())
+
 
 @dataclass(frozen=True)
 class FeatureSpec:
@@ -72,22 +94,64 @@ class FeatureSpec:
         return list(self.categorical.keys())
 
 
-def load_dataset(path: Optional[Path] = None) -> pd.DataFrame:
-    """Load the raw CSV and drop ID/date columns.
+def clean_dataset(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:
+    """Apply data cleaning. Returns the cleaned frame plus an audit dict.
 
-    Returns a DataFrame with one row per harvest, columns in
-    FEATURE_SPEC.categorical + FEATURE_SPEC.numeric_ranges + [TARGET].
-    Missing values in feature columns are left as NaN; gradient-boosted
-    models consume them directly, and the sklearn pipeline imputes for
-    models that cannot.
+    Cleaning steps:
+      1. Drop exact duplicate rows. The raw CSV has 200 fully repeated
+         harvest records; leaving them in lets the same row land in both
+         train and test, biasing test metrics optimistically.
+      2. Repair temperature-consistency violations. A single row has
+         avg > max by 0.1°C (rounding artifact); we clip avg into
+         [min, max] instead of dropping the row.
+      3. Add per-block missingness indicators. Fertilizer N/P/K are
+         missing as a group ("no fertilizer recorded") and the 5 env
+         columns are missing as a group ("no env sensors"). The
+         indicators let non-tree models learn what NaN means.
+    """
+    audit: Dict[str, int] = {}
+    audit["rows_in"] = len(df)
+
+    # 1. Drop exact duplicates.
+    before = len(df)
+    df = df.drop_duplicates().reset_index(drop=True)
+    audit["duplicates_dropped"] = before - len(df)
+
+    # 2. Repair temperature ordering.
+    bad_mask = (df["min_temperature_C"] > df["avg_temperature_C"]) | (
+        df["avg_temperature_C"] > df["max_temperature_C"]
+    )
+    audit["temp_rows_repaired"] = int(bad_mask.sum())
+    if bad_mask.any():
+        df.loc[bad_mask, "avg_temperature_C"] = df.loc[bad_mask, ["min_temperature_C", "max_temperature_C"]].mean(axis=1)
+
+    # 3. Add missingness indicators (computed BEFORE any imputation).
+    for indicator_name, cols in MISSINGNESS_INDICATOR_GROUPS.items():
+        df[indicator_name] = df[cols].isna().all(axis=1).astype(float)
+
+    audit["rows_out"] = len(df)
+    return df, audit
+
+
+def load_dataset(path: Optional[Path] = None, clean: bool = True) -> pd.DataFrame:
+    """Load the raw CSV, drop ID/date columns, optionally clean.
+
+    With `clean=True` (default): drops 200 duplicate rows, repairs the
+    one temperature-ordering violation, and adds the missingness
+    indicator features. With `clean=False`: returns the raw frame
+    (useful for diagnostics or to compare cleaned vs raw).
+
+    Rows with NaN target are always dropped (none in this dataset, but
+    a defensive check).
     """
     src = Path(path) if path is not None else DEFAULT_DATA_PATH
     if not src.exists():
         raise FileNotFoundError(f"Dataset not found at {src}")
     df = pd.read_csv(src)
     df = df.drop(columns=[c for c in DROP_COLUMNS if c in df.columns])
-    # Target must be present; drop rows where it is missing.
     df = df.dropna(subset=[TARGET]).reset_index(drop=True)
+    if clean:
+        df, _ = clean_dataset(df)
     return df
 
 
@@ -164,11 +228,15 @@ def make_preprocessor(
     )
     categorical_pipeline = Pipeline(cat_steps)
 
+    # Indicators are 0/1 and never NaN — pass through unchanged.
+    transformers = [
+        ("num", numeric_pipeline, NUMERIC_FEATURES),
+        ("cat", categorical_pipeline, CATEGORICAL_FEATURES),
+    ]
+    transformers.append(("ind", "passthrough", INDICATOR_FEATURES))
+
     return ColumnTransformer(
-        transformers=[
-            ("num", numeric_pipeline, NUMERIC_FEATURES),
-            ("cat", categorical_pipeline, CATEGORICAL_FEATURES),
-        ],
+        transformers=transformers,
         remainder="drop",
     )
 
@@ -199,7 +267,7 @@ def split_data(
         train_val, test_size=rel_val, random_state=random_state, stratify=strat_tv
     )
 
-    feature_cols = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    feature_cols = NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES
     return {
         "X_train": train[feature_cols].reset_index(drop=True),
         "y_train": train[TARGET].reset_index(drop=True),

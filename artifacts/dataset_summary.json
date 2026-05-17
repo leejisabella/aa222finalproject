@@ -1,48 +1,50 @@
 {
-  "n_rows": 10400,
+  "n_rows": 10200,
   "crop_counts": {
-    "Tomato": 4112,
-    "Cucumber": 3167,
-    "Lettuce": 2069,
-    "Pepper": 1052
+    "Tomato": 4044,
+    "Cucumber": 3104,
+    "Lettuce": 2024,
+    "Pepper": 1028
   },
   "missing_pct": {
     "crop_type": 0.0,
     "variety": 0.0,
     "days_to_maturity": 0.0,
-    "avg_temperature_C": 5.21,
-    "min_temperature_C": 5.21,
-    "max_temperature_C": 5.21,
-    "humidity_percent": 5.21,
-    "co2_ppm": 5.51,
-    "light_intensity_lux": 5.21,
+    "avg_temperature_C": 5.19,
+    "min_temperature_C": 5.19,
+    "max_temperature_C": 5.19,
+    "humidity_percent": 5.19,
+    "co2_ppm": 5.49,
+    "light_intensity_lux": 5.19,
     "photoperiod_hours": 0.0,
     "irrigation_mm": 0.0,
     "fertilizer_N_kg_ha": 10.17,
     "fertilizer_P_kg_ha": 10.17,
     "fertilizer_K_kg_ha": 10.17,
-    "pest_severity": 1.19,
+    "pest_severity": 1.21,
     "soil_pH": 2.9,
-    "yield_kg_per_m2": 0.0
+    "yield_kg_per_m2": 0.0,
+    "fertilizer_was_missing": 0.0,
+    "env_was_missing": 0.0
   },
   "target_stats": {
     "count": {
-      "Cucumber": 3167.0,
-      "Lettuce": 2069.0,
-      "Pepper": 1052.0,
-      "Tomato": 4112.0
+      "Cucumber": 3104.0,
+      "Lettuce": 2024.0,
+      "Pepper": 1028.0,
+      "Tomato": 4044.0
     },
     "mean": {
-      "Cucumber": 11.378,
-      "Lettuce": 7.253,
-      "Pepper": 8.78,
-      "Tomato": 16.657
+      "Cucumber": 11.392,
+      "Lettuce": 7.261,
+      "Pepper": 8.76,
+      "Tomato": 16.655
     },
     "std": {
-      "Cucumber": 3.048,
-      "Lettuce": 2.364,
-      "Pepper": 2.675,
-      "Tomato": 3.853
+      "Cucumber": 3.057,
+      "Lettuce": 2.36,
+      "Pepper": 2.658,
+      "Tomato": 3.856
     },
     "min": {
       "Cucumber": 2.4,
@@ -52,20 +54,20 @@
     },
     "25%": {
       "Cucumber": 9.27,
-      "Lettuce": 5.62,
+      "Lettuce": 5.63,
       "Pepper": 6.877,
-      "Tomato": 13.818
+      "Tomato": 13.82
     },
     "50%": {
-      "Cucumber": 11.32,
+      "Cucumber": 11.33,
       "Lettuce": 7.26,
-      "Pepper": 8.685,
+      "Pepper": 8.67,
       "Tomato": 16.42
     },
     "75%": {
-      "Cucumber": 13.45,
-      "Lettuce": 8.85,
-      "Pepper": 10.58,
+      "Cucumber": 13.472,
+      "Lettuce": 8.852,
+      "Pepper": 10.542,
       "Tomato": 19.312
     },
     "max": {

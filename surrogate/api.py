@@ -24,6 +24,8 @@ import pandas as pd
 
 from surrogate.data import (
     CATEGORICAL_FEATURES,
+    INDICATOR_FEATURES,
+    MISSINGNESS_INDICATOR_GROUPS,
     NUMERIC_FEATURES,
     FeatureSpec,
     build_feature_spec,
@@ -70,8 +72,15 @@ class SurrogatePredictor:
         missing = [c for c in (NUMERIC_FEATURES + CATEGORICAL_FEATURES) if c not in df.columns]
         if missing:
             raise ValueError(f"Missing required feature columns: {missing}")
+        # Auto-fill missingness indicators from the actual NaN pattern in
+        # the supplied numeric columns. Optimizers supply fully-specified
+        # configs (no NaNs), so these indicators end up as 0 — which
+        # matches the "measurement was recorded" branch the model trained on.
+        for indicator, cols in MISSINGNESS_INDICATOR_GROUPS.items():
+            if indicator not in df.columns:
+                df[indicator] = df[cols].isna().all(axis=1).astype(float)
         # Reorder + drop extras so the preprocessor sees its expected schema.
-        return df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+        return df[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES]
 
     def _validate(self, df: pd.DataFrame, strict: bool) -> List[str]:
         """Return list of human-readable warnings/errors. Raise if strict."""

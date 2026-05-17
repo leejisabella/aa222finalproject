@@ -7,9 +7,12 @@ import pytest
 
 from surrogate.data import (
     CATEGORICAL_FEATURES,
+    INDICATOR_FEATURES,
+    MISSINGNESS_INDICATOR_GROUPS,
     NUMERIC_FEATURES,
     TARGET,
     build_feature_spec,
+    clean_dataset,
     load_dataset,
     make_preprocessor,
     split_data,
@@ -32,10 +35,55 @@ def test_load_has_all_features_and_target(df: pd.DataFrame) -> None:
         assert col in df.columns
 
 
-def test_load_size_is_reasonable(df: pd.DataFrame) -> None:
-    # The Kaggle file has 10,400 rows. We drop rows where target is NaN
-    # (none in this dataset) so it should still be 10,400.
-    assert len(df) == 10400
+def test_load_size_after_cleaning(df: pd.DataFrame) -> None:
+    # Raw CSV is 10,400 rows. Cleaning drops 200 exact duplicates → 10,200.
+    assert len(df) == 10200
+
+
+def test_load_raw_keeps_duplicates() -> None:
+    raw = load_dataset(clean=False)
+    assert len(raw) == 10400
+    assert raw.duplicated().sum() == 200
+
+
+def test_clean_dataset_audit() -> None:
+    raw = load_dataset(clean=False)
+    cleaned, audit = clean_dataset(raw)
+    assert audit["duplicates_dropped"] == 200
+    assert audit["temp_rows_repaired"] == 1
+    assert audit["rows_in"] == 10400
+    assert audit["rows_out"] == 10200
+    # No duplicates remain
+    assert cleaned.duplicated().sum() == 0
+    # Temp ordering invariant holds after repair
+    bad = (cleaned["min_temperature_C"] > cleaned["avg_temperature_C"]) | (
+        cleaned["avg_temperature_C"] > cleaned["max_temperature_C"]
+    )
+    # Allow NaN rows (env block missing): NaN comparisons return False so .any() is safe
+    assert int(bad.sum()) == 0
+
+
+def test_missingness_indicators_present(df: pd.DataFrame) -> None:
+    for ind in INDICATOR_FEATURES:
+        assert ind in df.columns
+        assert set(df[ind].unique()) <= {0.0, 1.0}
+
+
+def test_missingness_indicators_match_block_pattern(df: pd.DataFrame) -> None:
+    for indicator, cols in MISSINGNESS_INDICATOR_GROUPS.items():
+        # Indicator = 1 iff ALL cols in the block are NaN
+        expected = df[cols].isna().all(axis=1).astype(float)
+        pd.testing.assert_series_equal(
+            df[indicator].rename(None), expected.rename(None),
+            check_names=False,
+        )
+
+
+def test_missingness_indicator_counts(df: pd.DataFrame) -> None:
+    # After dropping 200 duplicates, fertilizer block-missing count should still be present.
+    # Raw count is 1058; duplicates could overlap with missing rows, so we just check >0.
+    assert int(df["fertilizer_was_missing"].sum()) > 0
+    assert int(df["env_was_missing"].sum()) > 0
 
 
 def test_no_missing_target(df: pd.DataFrame) -> None:
@@ -93,7 +141,7 @@ def test_preprocessor_handles_missing(df: pd.DataFrame) -> None:
     # Inject a NaN to exercise the imputer path
     sample = df.head(50).copy()
     sample.loc[0, "avg_temperature_C"] = np.nan
-    Xt = pp.fit_transform(sample[NUMERIC_FEATURES + CATEGORICAL_FEATURES])
+    Xt = pp.fit_transform(sample[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES])
     assert not np.isnan(Xt).any()
 
 
@@ -101,14 +149,14 @@ def test_preprocessor_passthrough_keeps_nan(df: pd.DataFrame) -> None:
     pp = make_preprocessor(handle_missing=False, scale_numeric=False)
     sample = df.head(50).copy()
     sample.loc[0, "avg_temperature_C"] = np.nan
-    Xt = pp.fit_transform(sample[NUMERIC_FEATURES + CATEGORICAL_FEATURES])
+    Xt = pp.fit_transform(sample[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES])
     # NaN in numeric branch should propagate (this is what XGBoost/HGB want)
     assert np.isnan(Xt).any()
 
 
 def test_preprocessor_unknown_category_ignored(df: pd.DataFrame) -> None:
     pp = make_preprocessor(handle_missing=False, scale_numeric=False)
-    train = df.head(200)[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+    train = df.head(200)[NUMERIC_FEATURES + CATEGORICAL_FEATURES + INDICATOR_FEATURES]
     pp.fit(train)
     novel = train.head(1).copy()
     novel.loc[novel.index[0], "variety"] = "MutantStrain99"
@@ -121,5 +169,5 @@ def test_preprocessor_unknown_category_ignored(df: pd.DataFrame) -> None:
 
 def test_summary_has_expected_keys(df: pd.DataFrame) -> None:
     summary = summarize_dataset(df)
-    assert summary["n_rows"] == 10400
+    assert summary["n_rows"] == 10200  # after dedup
     assert set(summary["crop_counts"].keys()) == {"Tomato", "Cucumber", "Lettuce", "Pepper"}
