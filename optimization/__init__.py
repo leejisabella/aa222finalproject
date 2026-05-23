@@ -10,7 +10,9 @@ Exports:
 
 from optimization.constraints import (
     Constraint,
+    DEFAULT_COST_BUDGET_USD_PER_M2,
     DEFAULT_ELECTRICITY_BUDGET_KWH_PER_M2,
+    DEFAULT_WATER_BUDGET_L_PER_M2,
     VPD_LOWER_KPA,
     VPD_UPPER_KPA,
     default_constraints,
@@ -36,18 +38,26 @@ from optimization.crop_specs import (
     DECISION_VARIABLES,
     MAX_PEST_SEVERITY,
 )
+from optimization.bayesian import BayesianOptimizer
+from optimization.genetic import GeneticAlgorithm
+from optimization.history import OptimizerHistory
 from optimization.problem import GreenhouseProblem, make_all_problems
 
 __all__ = [
+    "BayesianOptimizer",
     "CROP_SPECS",
     "Constraint",
     "DECISION_VARIABLES",
+    "DEFAULT_COST_BUDGET_USD_PER_M2",
     "DEFAULT_ELECTRICITY_BUDGET_KWH_PER_M2",
+    "DEFAULT_WATER_BUDGET_L_PER_M2",
     "ELECTRICITY_PRICE_USD_PER_KWH",
+    "GeneticAlgorithm",
     "GreenhouseProblem",
     "LAYER_AREA_M2",
     "MAX_PEST_SEVERITY",
     "NUM_LAYERS",
+    "OptimizerHistory",
     "TOTAL_AREA_M2",
     "VPD_LOWER_KPA",
     "VPD_UPPER_KPA",

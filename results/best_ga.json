@@ -1,0 +1,124 @@
+{
+  "best_combined_config": {
+    "pop_size": 200,
+    "pc": 0.8,
+    "pm": 0.14285714285714285,
+    "eta_c": 2.0,
+    "eta_m": 5.0
+  },
+  "per_sweep_winners": {
+    "pop_size": {
+      "winner": {
+        "pop_size": 200
+      },
+      "score": 24.656676394131924,
+      "alternatives": [
+        {
+          "config": {
+            "pop_size": 100
+          },
+          "score": 24.380832364305498
+        },
+        {
+          "config": {
+            "pop_size": 50
+          },
+          "score": 24.025724035522195
+        },
+        {
+          "config": {
+            "pop_size": 20
+          },
+          "score": 23.47521883154784
+        }
+      ]
+    },
+    "pc": {
+      "winner": {
+        "pc": 0.8
+      },
+      "score": 24.587063007373516,
+      "alternatives": [
+        {
+          "config": {
+            "pc": 1.0
+          },
+          "score": 24.048189724323073
+        },
+        {
+          "config": {
+            "pc": 0.9
+          },
+          "score": 24.025724035522195
+        },
+        {
+          "config": {
+            "pc": 0.6
+          },
+          "score": 24.01439173318101
+        }
+      ]
+    },
+    "pm": {
+      "winner": {
+        "pm": 0.14285714285714285
+      },
+      "score": 24.69860696316122,
+      "alternatives": [
+        {
+          "config": {
+            "pm": 0.03571428571428571
+          },
+          "score": 24.077429027274174
+        },
+        {
+          "config": {
+            "pm": 0.07142857142857142
+          },
+          "score": 24.025724035522195
+        }
+      ]
+    },
+    "eta_c": {
+      "winner": {
+        "eta_c": 2.0
+      },
+      "score": 24.50073752024526,
+      "alternatives": [
+        {
+          "config": {
+            "eta_c": 30.0
+          },
+          "score": 24.0304889249556
+        },
+        {
+          "config": {
+            "eta_c": 15.0
+          },
+          "score": 24.025724035522195
+        }
+      ]
+    },
+    "eta_m": {
+      "winner": {
+        "eta_m": 5.0
+      },
+      "score": 24.0414229385229,
+      "alternatives": [
+        {
+          "config": {
+            "eta_m": 20.0
+          },
+          "score": 24.025724035522195
+        },
+        {
+          "config": {
+            "eta_m": 50.0
+          },
+          "score": 23.941886353140656
+        }
+      ]
+    }
+  },
+  "source_tuning_file": "results/tuning_ga.json"
+}

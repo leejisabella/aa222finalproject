@@ -1,0 +1,89 @@
+{
+  "best_combined_config": {
+    "kernel": "matern52",
+    "acquisition": "cei",
+    "n_init": 20,
+    "kappa": 0.5
+  },
+  "per_sweep_winners": {
+    "kernel": {
+      "winner": {
+        "kernel": "matern52"
+      },
+      "score": 23.484824053917656,
+      "alternatives": [
+        {
+          "config": {
+            "kernel": "rbf"
+          },
+          "score": 22.88420902271127
+        }
+      ]
+    },
+    "acquisition": {
+      "winner": {
+        "acquisition": "cei"
+      },
+      "score": 23.484824053917656,
+      "alternatives": [
+        {
+          "config": {
+            "acquisition": "ucb",
+            "kappa": 2.0
+          },
+          "score": 20.6502941638002
+        },
+        {
+          "config": {
+            "acquisition": "pi"
+          },
+          "score": 20.6502941638002
+        }
+      ]
+    },
+    "n_init": {
+      "winner": {
+        "n_init": 20
+      },
+      "score": 23.484824053917656,
+      "alternatives": [
+        {
+          "config": {
+            "n_init": 40
+          },
+          "score": 23.315299140463452
+        },
+        {
+          "config": {
+            "n_init": 10
+          },
+          "score": 22.554232851077032
+        }
+      ]
+    },
+    "ucb_kappa": {
+      "winner": {
+        "acquisition": "ucb",
+        "kappa": 0.5
+      },
+      "score": 20.6502941638002,
+      "alternatives": [
+        {
+          "config": {
+            "acquisition": "ucb",
+            "kappa": 2.0
+          },
+          "score": 20.6502941638002
+        },
+        {
+          "config": {
+            "acquisition": "ucb",
+            "kappa": 5.0
+          },
+          "score": 20.6502941638002
+        }
+      ]
+    }
+  },
+  "source_tuning_file": "results/tuning_bo.json"
+}

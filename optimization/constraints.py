@@ -18,18 +18,27 @@ from typing import Callable, List, Mapping
 
 import numpy as np
 
-from optimization.cost_model import electricity_kwh_per_m2_per_cycle
+from optimization.cost_model import (
+    electricity_kwh_per_m2_per_cycle,
+    total_operating_cost_usd,
+    water_l_per_m2_per_cycle,
+)
 
 # Default electricity budget per the milestone: 100–300 kWh/m²/cycle.
-# Implemented as an upper bound only (the lower bound has no physical
-# meaning — small crops like lettuce can legitimately use less). Pass a
-# tuple via `electricity_budget_kwh_per_m2` to enforce both ends.
-DEFAULT_ELECTRICITY_BUDGET_KWH_PER_M2 = 300.0
+# Both bounds enforced by default — the milestone states the band as a
+# range, not just a ceiling.
+DEFAULT_ELECTRICITY_BUDGET_KWH_PER_M2: tuple[float, float] = (100.0, 300.0)
 
 # VPD horticultural band from the milestone. < 0.5 kPa → fungal disease
 # risk; > 1.2 kPa → plant water stress.
 VPD_LOWER_KPA = 0.5
 VPD_UPPER_KPA = 1.2
+
+# Water budget: cycle-total irrigation per m² (irrigation_mm × days).
+DEFAULT_WATER_BUDGET_L_PER_M2 = 400.0
+
+# Operating cost budget: electricity + water + fertilizer per m² per cycle.
+DEFAULT_COST_BUDGET_USD_PER_M2 = 300.0
 
 
 def vapor_pressure_deficit_kpa(avg_temp_c: float, humidity_percent: float) -> float:
@@ -100,14 +109,41 @@ def _make_electricity_lower(floor: float):
     return _g
 
 
+def _make_water_upper(budget_l_per_m2: float):
+    def _g(config: Mapping[str, float]) -> float:
+        return water_l_per_m2_per_cycle(config) - budget_l_per_m2
+    return _g
+
+
+def _make_cost_upper(budget_usd_per_m2: float):
+    # Operating cost scales linearly with area, so total_operating_cost_usd
+    # evaluated at area_m2=1.0 returns $/m²/cycle directly.
+    def _g(config: Mapping[str, float]) -> float:
+        return total_operating_cost_usd(config, area_m2=1.0) - budget_usd_per_m2
+    return _g
+
+
 def default_constraints(
     electricity_budget_kwh_per_m2: float | tuple[float, float] = DEFAULT_ELECTRICITY_BUDGET_KWH_PER_M2,
     vpd_band_kpa: tuple[float, float] = (VPD_LOWER_KPA, VPD_UPPER_KPA),
+    water_budget_l_per_m2: float | None = DEFAULT_WATER_BUDGET_L_PER_M2,
+    cost_budget_usd_per_m2: float | None = DEFAULT_COST_BUDGET_USD_PER_M2,
 ) -> List[Constraint]:
     """Build the standard coupling-constraint list for the milestone problem.
 
-    `electricity_budget_kwh_per_m2` may be a scalar (upper bound only)
-    or a (lo, hi) tuple to enforce both ends.
+    Parameters
+    ----------
+    electricity_budget_kwh_per_m2
+        Scalar (upper bound only) or (lo, hi) tuple. Default is
+        (100.0, 300.0) per the milestone.
+    vpd_band_kpa
+        (lower, upper) VPD band in kPa. Default (0.5, 1.2).
+    water_budget_l_per_m2
+        Cycle-total irrigation cap (L/m²/cycle). `None` disables this
+        constraint; default 400.0.
+    cost_budget_usd_per_m2
+        Cycle-total operating-cost cap ($/m²/cycle), summing electricity,
+        water, and fertilizer. `None` disables; default $300/m²/cycle.
 
     Returns a list of `Constraint` objects in a fixed order so the
     output of `Problem.constraints(x)` is reproducible across runs.
@@ -157,6 +193,22 @@ def default_constraints(
             name="electricity_upper",
             g=_make_electricity_upper(float(electricity_budget_kwh_per_m2)),
             description=f"electricity ≤ {electricity_budget_kwh_per_m2} kWh/m²/cycle",
+        ))
+
+    # Water budget (cycle-total irrigation per m²).
+    if water_budget_l_per_m2 is not None:
+        cons.append(Constraint(
+            name="water_upper",
+            g=_make_water_upper(float(water_budget_l_per_m2)),
+            description=f"water ≤ {water_budget_l_per_m2} L/m²/cycle",
+        ))
+
+    # Operating-cost budget (electricity + water + fertilizer per m²).
+    if cost_budget_usd_per_m2 is not None:
+        cons.append(Constraint(
+            name="cost_upper",
+            g=_make_cost_upper(float(cost_budget_usd_per_m2)),
+            description=f"op cost ≤ ${cost_budget_usd_per_m2}/m²/cycle",
         ))
 
     return cons

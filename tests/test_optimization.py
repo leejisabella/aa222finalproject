@@ -122,21 +122,36 @@ def test_vpd_matches_horticulture_reference_at_25c_70pct():
     assert 0.85 < vpd < 1.05
 
 
-def test_default_constraints_have_5_when_scalar_budget():
+def test_default_constraints_have_full_milestone_set():
+    # Default: 2 temp + 2 VPD + 2 electricity (100-300) + water + cost = 8
     cons = default_constraints()
-    # 2 temp-ordering + 2 VPD + 1 electricity upper = 5
-    assert len(cons) == 5
-    names = [c.name for c in cons]
-    assert {"temp_min_le_avg", "temp_avg_le_max", "vpd_lower",
-            "vpd_upper", "electricity_upper"} == set(names)
+    assert len(cons) == 8
+    names = {c.name for c in cons}
+    assert names == {
+        "temp_min_le_avg", "temp_avg_le_max",
+        "vpd_lower", "vpd_upper",
+        "electricity_lower", "electricity_upper",
+        "water_upper", "cost_upper",
+    }
 
 
-def test_default_constraints_have_6_when_tuple_budget():
-    cons = default_constraints(electricity_budget_kwh_per_m2=(100, 300))
-    assert len(cons) == 6
-    names = [c.name for c in cons]
-    assert "electricity_lower" in names
+def test_default_constraints_with_scalar_electricity_budget_drops_lower():
+    cons = default_constraints(electricity_budget_kwh_per_m2=300.0)
+    names = {c.name for c in cons}
     assert "electricity_upper" in names
+    assert "electricity_lower" not in names  # scalar = upper-only
+
+
+def test_default_constraints_water_disabled():
+    cons = default_constraints(water_budget_l_per_m2=None)
+    names = {c.name for c in cons}
+    assert "water_upper" not in names
+
+
+def test_default_constraints_cost_disabled():
+    cons = default_constraints(cost_budget_usd_per_m2=None)
+    names = {c.name for c in cons}
+    assert "cost_upper" not in names
 
 
 def test_vpd_constraints_sign_convention():
@@ -148,6 +163,62 @@ def test_vpd_constraints_sign_convention():
            "days_to_maturity": 65.0}
     assert cons["vpd_lower"](cfg) < 0  # 0.5 - 0.95 < 0 ✓
     assert cons["vpd_upper"](cfg) < 0  # 0.95 - 1.2 < 0 ✓
+
+
+def test_electricity_lower_constraint_active_at_low_settings():
+    """Cheap config (low lux + short photoperiod + short cycle) violates the
+    100 kWh/m² floor."""
+    cons = {c.name: c for c in default_constraints()}
+    cheap = {"avg_temperature_C": 22, "humidity_percent": 70,
+             "min_temperature_C": 18, "max_temperature_C": 28,
+             "light_intensity_lux": 10000, "photoperiod_hours": 10,
+             "days_to_maturity": 30, "irrigation_mm": 3,
+             "fertilizer_N_kg_ha": 80, "fertilizer_P_kg_ha": 40,
+             "fertilizer_K_kg_ha": 100}
+    # 10000/100 * 10 * 30 * 1e-3 = 30 kWh/m² < 100 → 100 - 30 = 70 > 0
+    assert cons["electricity_lower"](cheap) > 0
+
+
+def test_water_upper_constraint_active_at_long_wet_cycles():
+    cons = {c.name: c for c in default_constraints()}
+    # 10 mm/day × 60 days = 600 L/m² > 400 budget → violated
+    wet = {"avg_temperature_C": 22, "humidity_percent": 75,
+           "min_temperature_C": 18, "max_temperature_C": 28,
+           "light_intensity_lux": 25000, "photoperiod_hours": 12,
+           "days_to_maturity": 60, "irrigation_mm": 10,
+           "fertilizer_N_kg_ha": 100, "fertilizer_P_kg_ha": 50,
+           "fertilizer_K_kg_ha": 150}
+    assert cons["water_upper"](wet) > 0  # 600 - 400 = 200 > 0
+
+
+def test_water_upper_satisfied_at_modest_irrigation():
+    cons = {c.name: c for c in default_constraints()}
+    # 5 mm × 60 days = 300 L/m² < 400 → feasible (g < 0)
+    modest = {"avg_temperature_C": 22, "humidity_percent": 70,
+              "min_temperature_C": 18, "max_temperature_C": 28,
+              "light_intensity_lux": 25000, "photoperiod_hours": 12,
+              "days_to_maturity": 60, "irrigation_mm": 5,
+              "fertilizer_N_kg_ha": 100, "fertilizer_P_kg_ha": 50,
+              "fertilizer_K_kg_ha": 150}
+    assert cons["water_upper"](modest) < 0
+
+
+def test_cost_upper_dominated_by_electricity():
+    """At electricity_upper = 300 kWh/m² × $0.41 = $123/m², well below the
+    $300/m² cost budget. So a cost violation requires either an irrigation
+    spike (cheap on its own) or extreme electricity (already capped). The
+    constraint mostly serves as a defense-in-depth cap."""
+    cons = {c.name: c for c in default_constraints()}
+    # Right at electricity ceiling but realistic everything else.
+    moderate = {"avg_temperature_C": 24, "humidity_percent": 70,
+                "min_temperature_C": 20, "max_temperature_C": 28,
+                "light_intensity_lux": 30000, "photoperiod_hours": 14,
+                "days_to_maturity": 70, "irrigation_mm": 5,
+                "fertilizer_N_kg_ha": 150, "fertilizer_P_kg_ha": 70,
+                "fertilizer_K_kg_ha": 200}
+    # electricity ≈ 294 kWh/m² × $0.41 = $120.5/m², water tiny, fert tiny
+    # → total ≈ $122/m² < $300 → g < 0
+    assert cons["cost_upper"](moderate) < 0
 
 
 def test_temp_ordering_constraints_detect_inversion():
